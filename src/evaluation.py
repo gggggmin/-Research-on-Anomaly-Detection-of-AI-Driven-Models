@@ -51,6 +51,20 @@ def compute_metrics(y_true: np.ndarray, scores: np.ndarray, threshold: float | N
     return metrics
 
 
+def threshold_on_validation(
+    y_val: np.ndarray,
+    val_scores: np.ndarray,
+    y_test: np.ndarray,
+    test_scores: np.ndarray,
+) -> dict[str, float]:
+    threshold, extra = best_threshold_from_pr(y_val, val_scores)
+    metrics = compute_metrics(y_test, test_scores, threshold)
+    metrics["validation_threshold"] = threshold
+    metrics["validation_best_pr_f1"] = extra["best_pr_f1"]
+    metrics["validation_pr_auc"] = extra["pr_auc"]
+    return metrics
+
+
 def save_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

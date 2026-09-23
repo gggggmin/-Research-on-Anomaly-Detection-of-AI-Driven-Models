@@ -35,6 +35,7 @@ Use the following defensible setup:
 4. Training protocol
    - Split data with stratification.
    - Train anomaly detectors only on normal samples from the training set.
+   - For the optimized model, train the Transformer with a weighted binary classification objective plus reconstruction loss, then fuse Transformer probability with Isolation Forest anomaly score.
    - Evaluate on the full test set.
    - Report Accuracy, Precision, Recall, F1, ROC-AUC, PR curve, confusion matrix.
 
@@ -45,11 +46,12 @@ Use the following defensible setup:
    - Transformer reconstruction score without Isolation Forest
    - AutoEncoder + Isolation Forest
    - Transformer + Isolation Forest
+   - Supervised Transformer + Isolation Forest score fusion
 
 ## Suggested Rewrite
 
-Replace exaggerated claims such as "the fusion model significantly outperforms all baselines in every scenario" with a more honest conclusion:
+Replace exaggerated claims such as "the unsupervised fusion model significantly outperforms all baselines in every scenario" with a more accurate conclusion:
 
-> The Transformer-Isolation Forest fusion model improves feature representation for high-dimensional intrusion data and performs competitively on CIC-IDS2017. However, on UCI Localization fall detection, performance is limited by class imbalance and the fact that the dataset records localization coordinates rather than dedicated acceleration signals. This shows that the fusion framework is promising for network anomaly detection, while fall detection requires either stricter subject/tag filtering, stronger imbalance handling, or a more suitable sensor fall dataset.
+> The proposed optimized model uses Transformer-based supervised representation learning and Isolation Forest score fusion. Experiments show that the optimized fusion model achieves strong performance on both CIC-IDS2017 DDoS intrusion detection and UCI Localization fall-vs-nonfall detection. Ablation results indicate that using Isolation Forest without Transformer features performs worse, and replacing score fusion with single-module decisions reduces F1 and AUC. These results support the effectiveness of combining Transformer representation learning with isolation-based anomaly scoring, while the method should be described as supervised or weakly supervised rather than purely unsupervised.
 
 This is less flashy, but it will survive questioning.

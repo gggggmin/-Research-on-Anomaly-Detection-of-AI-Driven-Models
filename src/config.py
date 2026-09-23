@@ -44,6 +44,7 @@ class ModelConfig:
     iforest_estimators: int = 200
     iforest_max_samples: float = 0.8
     contamination: float = 0.1
+    supervision_weight: float = 0.5
     random_state: int = RANDOM_STATE
 
     def to_dict(self) -> dict[str, Any]:

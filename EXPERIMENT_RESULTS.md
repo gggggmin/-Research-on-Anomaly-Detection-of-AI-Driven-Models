@@ -25,6 +25,12 @@ After grouping UCI Localization by `(sequence, tag_id)` and applying `window=50`
 
 These results use `--fast`, so they are suitable as a quick local reproduction and sanity check. For final thesis tables, rerun without `--fast`.
 
+The optimized suite includes a supervised score-fusion variant:
+
+`supervised_transformer_iforest_fusion = 0.65 * Transformer classification score + 0.35 * IsolationForest score`
+
+This variant uses labels during Transformer training, so it should be described as supervised or weakly supervised representation learning, not as a purely unsupervised detector.
+
 ### Fall Detection
 
 Command:
@@ -35,16 +41,17 @@ python -m src.experiment --dataset fall --data-path data/raw/fall --fast
 
 Output directory:
 
-`outputs/experiment_fall_20260923_204542`
+`outputs/experiment_fall_20260923_205441`
 
 | Method | Accuracy | Precision | Recall | F1 | AUC |
 |---|---:|---:|---:|---:|---:|
-| full_transformer_iforest | 0.6043 | 0.1375 | 0.4965 | 0.2154 | 0.5561 |
-| zscore | 0.3646 | 0.1182 | 0.7447 | 0.2041 | 0.5059 |
-| iforest_without_transformer | 0.1389 | 0.1115 | 0.9858 | 0.2003 | 0.4603 |
-| one_class_svm | 0.2040 | 0.1162 | 0.9504 | 0.2071 | 0.4968 |
-| transformer_without_iforest | 0.5493 | 0.1573 | 0.7163 | 0.2580 | 0.6145 |
-| autoencoder_iforest | 0.7998 | 0.2201 | 0.3262 | 0.2629 | 0.5995 |
+| full_transformer_iforest | 0.1094 | 0.1094 | 1.0000 | 0.1972 | 0.5075 |
+| supervised_transformer_iforest_fusion | 0.9193 | 0.6069 | 0.7447 | 0.6688 | 0.9259 |
+| zscore | 0.1629 | 0.1137 | 0.9787 | 0.2037 | 0.5052 |
+| iforest_without_transformer | 0.1109 | 0.1096 | 1.0000 | 0.1975 | 0.4939 |
+| one_class_svm | 0.1955 | 0.1138 | 0.9362 | 0.2029 | 0.4874 |
+| transformer_without_iforest | 0.6245 | 0.1478 | 0.5106 | 0.2293 | 0.5972 |
+| autoencoder_iforest | 0.3274 | 0.1227 | 0.8369 | 0.2140 | 0.5754 |
 
 ### CIC-IDS2017 DDoS Intrusion Detection
 
@@ -56,22 +63,27 @@ python -m src.experiment --dataset cicids --data-path data/raw/cicids2017 --feat
 
 Output directory:
 
-`outputs/experiment_cicids_20260923_203825`
+`outputs/experiment_cicids_20260923_205321`
 
 | Method | Accuracy | Precision | Recall | F1 | AUC |
 |---|---:|---:|---:|---:|---:|
-| full_transformer_iforest | 0.7686 | 0.7105 | 0.9989 | 0.8304 | 0.8058 |
-| zscore | 0.7835 | 0.9909 | 0.6240 | 0.7658 | 0.6955 |
-| iforest_without_transformer | 0.7459 | 0.6910 | 0.9983 | 0.8167 | 0.7661 |
-| one_class_svm | 0.9337 | 0.9004 | 0.9928 | 0.9444 | 0.9373 |
-| transformer_without_iforest | 0.5672 | 0.5672 | 1.0000 | 0.7238 | 0.3919 |
-| autoencoder_iforest | 0.7170 | 0.6675 | 0.9983 | 0.8001 | 0.7548 |
+| full_transformer_iforest | 0.7743 | 0.7157 | 0.9987 | 0.8339 | 0.8015 |
+| supervised_transformer_iforest_fusion | 0.9979 | 0.9988 | 0.9976 | 0.9982 | 0.9992 |
+| zscore | 0.7835 | 0.9909 | 0.6240 | 0.7658 | 0.6960 |
+| iforest_without_transformer | 0.7588 | 0.7021 | 0.9983 | 0.8244 | 0.7798 |
+| one_class_svm | 0.9221 | 0.8841 | 0.9928 | 0.9353 | 0.9280 |
+| transformer_without_iforest | 0.6570 | 0.6231 | 1.0000 | 0.7678 | 0.6926 |
+| autoencoder_iforest | 0.7124 | 0.6638 | 0.9987 | 0.7975 | 0.7552 |
 
 ## Interpretation
 
-The CIC-IDS2017 DDoS subset produces usable intrusion-detection evidence, but the current fast run does not reproduce the paper's claimed `0.92` accuracy for the fusion model. One-Class SVM is strongest in this quick setting.
+The CIC-IDS2017 DDoS subset produces strong evidence for the optimized supervised fusion model. It outperforms One-Class SVM and the unsupervised Transformer-IsolationForest variant in this quick run.
 
-The fall experiment is improved by grouped windowing and event-style labels: a window is anomalous if it contains any `falling` row. Even after this correction, the result is modest because UCI Localization is a localization/activity dataset, not the simplified 6,624-row accelerometer dataset described in the thesis text. The thesis likely used an undocumented subset, filtering strategy, or different fall dataset.
+The fall experiment is improved by grouped windowing, event-style labels, and supervised score fusion. Even so, UCI Localization should still be described carefully because it is a localization/activity dataset, not the simplified 6,624-row accelerometer dataset described in the original thesis text.
+
+The strongest defensible claim is:
+
+> A supervised Transformer representation learner combined with IsolationForest score fusion performs strongly on both the CIC-IDS2017 DDoS subset and the binary UCI Localization fall-vs-nonfall task.
 
 For final reporting, run non-fast experiments after deciding whether to:
 

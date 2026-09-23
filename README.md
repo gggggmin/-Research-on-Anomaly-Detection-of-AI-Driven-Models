@@ -40,6 +40,8 @@ Each experiment writes `summary.csv`, `report.md`, per-method metrics, PR curves
 
 For UCI Localization, fall windows are built inside each `(sequence, tag_id)` group. A window is labelled anomalous if it contains any `falling` row.
 
+The experiment suite includes both the unsupervised Transformer + IsolationForest variant and an optimized supervised score-fusion variant.
+
 Current downloaded-data results are summarized in `EXPERIMENT_RESULTS.md`.
 
 Train fall detection:

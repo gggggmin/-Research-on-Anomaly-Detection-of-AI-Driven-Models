@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+from sklearn.model_selection import train_test_split
 
 from .baselines import iforest_scores, one_class_svm_scores, zscore_scores
 from .config import dataset_defaults
@@ -38,6 +39,40 @@ def score_and_record(
     if losses:
         plot_losses(method_dir / "train_loss.png", losses)
     return metrics
+
+
+def score_with_threshold_and_record(
+    run_dir: Path,
+    name: str,
+    y_true: np.ndarray,
+    scores: np.ndarray,
+    threshold: float,
+    metrics: dict[str, float],
+    losses: list[float] | None = None,
+) -> dict[str, float]:
+    method_dir = run_dir / name
+    method_dir.mkdir(parents=True, exist_ok=True)
+    save_json(method_dir / "metrics.json", {"method": name, "metrics": metrics})
+    save_predictions(method_dir / "predictions.csv", y_true, scores, threshold)
+    plot_pr_curve(method_dir / "pr_curve.png", y_true, scores)
+    plot_confusion_matrix(method_dir / "confusion_matrix.png", y_true, scores, threshold)
+    if losses:
+        plot_losses(method_dir / "train_loss.png", losses)
+    return metrics
+
+
+def record_with_validation_threshold(
+    run_dir: Path,
+    name: str,
+    y_val: np.ndarray,
+    val_scores: np.ndarray,
+    y_test: np.ndarray,
+    test_scores: np.ndarray,
+    losses: list[float] | None = None,
+) -> dict[str, float]:
+    threshold = compute_metrics(y_val, val_scores)["threshold"]
+    metrics = compute_metrics(y_test, test_scores, threshold)
+    return score_with_threshold_and_record(run_dir, name, y_test, test_scores, threshold, metrics, losses)
 
 
 def write_summary(run_dir: Path, dataset: str, results: dict[str, dict[str, float]], note: str) -> None:
@@ -88,35 +123,80 @@ def run_full_experiment(
     data_config.feature_mode = feature_mode
     bundle = load_dataset(data_config)
     model_config = choose_config(dataset, bundle.x_train.shape[-1], fast=fast)
+    x_dev, x_val, y_dev, y_val = train_test_split(
+        bundle.x_train,
+        bundle.y_train,
+        test_size=0.2,
+        stratify=bundle.y_train,
+        random_state=42,
+    )
     run_dir = Path(output_dir) / f"experiment_{dataset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     run_dir.mkdir(parents=True, exist_ok=True)
-    fit_x = bundle.x_train[bundle.y_train == 0]
+    fit_x = x_dev[y_dev == 0]
     if len(fit_x) == 0:
-        fit_x = bundle.x_train
+        fit_x = x_dev
 
     results: dict[str, dict[str, float]] = {}
 
     hybrid = HybridAnomalyDetector(bundle.x_train.shape[-1], model_config)
     hybrid_losses = hybrid.fit(fit_x)
+    val_scores = hybrid.anomaly_scores(x_val)
+    test_scores = hybrid.anomaly_scores(bundle.x_test)
     results["full_transformer_iforest"] = format_metrics(
-        score_and_record(run_dir, "full_transformer_iforest", bundle.y_test, hybrid.anomaly_scores(bundle.x_test), hybrid_losses)
+        record_with_validation_threshold(
+            run_dir,
+            "full_transformer_iforest",
+            y_val,
+            val_scores,
+            bundle.y_test,
+            test_scores,
+            hybrid_losses,
+        )
     )
 
-    results["zscore"] = format_metrics(score_and_record(run_dir, "zscore", bundle.y_test, zscore_scores(fit_x, bundle.x_test)))
+    supervised = HybridAnomalyDetector(bundle.x_train.shape[-1], model_config)
+    supervised_losses = supervised.fit_supervised(x_dev, y_dev)
+    sup_val_scores = supervised.fused_scores(x_val, alpha=0.65)
+    sup_test_scores = supervised.fused_scores(bundle.x_test, alpha=0.65)
+    results["supervised_transformer_iforest_fusion"] = format_metrics(
+        record_with_validation_threshold(
+            run_dir,
+            "supervised_transformer_iforest_fusion",
+            y_val,
+            sup_val_scores,
+            bundle.y_test,
+            sup_test_scores,
+            supervised_losses,
+        )
+    )
+
+    z_val = zscore_scores(fit_x, x_val)
+    z_test = zscore_scores(fit_x, bundle.x_test)
+    results["zscore"] = format_metrics(
+        record_with_validation_threshold(run_dir, "zscore", y_val, z_val, bundle.y_test, z_test)
+    )
+    if_val = iforest_scores(fit_x, x_val)
+    if_test = iforest_scores(fit_x, bundle.x_test)
     results["iforest_without_transformer"] = format_metrics(
-        score_and_record(run_dir, "iforest_without_transformer", bundle.y_test, iforest_scores(fit_x, bundle.x_test))
+        record_with_validation_threshold(run_dir, "iforest_without_transformer", y_val, if_val, bundle.y_test, if_test)
     )
+    svm_val = one_class_svm_scores(fit_x, x_val)
+    svm_test = one_class_svm_scores(fit_x, bundle.x_test)
     results["one_class_svm"] = format_metrics(
-        score_and_record(run_dir, "one_class_svm", bundle.y_test, one_class_svm_scores(fit_x, bundle.x_test))
+        record_with_validation_threshold(run_dir, "one_class_svm", y_val, svm_val, bundle.y_test, svm_test)
     )
+    recon_val = hybrid.reconstruction_scores(x_val)
+    recon_test = hybrid.reconstruction_scores(bundle.x_test)
     results["transformer_without_iforest"] = format_metrics(
-        score_and_record(run_dir, "transformer_without_iforest", bundle.y_test, hybrid.reconstruction_scores(bundle.x_test))
+        record_with_validation_threshold(run_dir, "transformer_without_iforest", y_val, recon_val, bundle.y_test, recon_test)
     )
 
     ae_iforest = AutoencoderIsolationForest(bundle.x_train.shape[1:], model_config)
     ae_losses = ae_iforest.fit(fit_x)
+    ae_val_scores = ae_iforest.anomaly_scores(x_val)
+    ae_test_scores = ae_iforest.anomaly_scores(bundle.x_test)
     results["autoencoder_iforest"] = format_metrics(
-        score_and_record(run_dir, "autoencoder_iforest", bundle.y_test, ae_iforest.anomaly_scores(bundle.x_test), ae_losses)
+        record_with_validation_threshold(run_dir, "autoencoder_iforest", y_val, ae_val_scores, bundle.y_test, ae_test_scores, ae_losses)
     )
 
     note = (

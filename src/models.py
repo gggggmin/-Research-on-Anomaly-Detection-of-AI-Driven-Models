@@ -48,6 +48,7 @@ class TransformerAutoencoder(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(layer, num_layers=n_layers)
         self.output_proj = nn.Linear(hidden_dim, input_dim)
+        self.classifier = nn.Linear(hidden_dim, 1)
 
     def encode_sequence(self, x: torch.Tensor) -> torch.Tensor:
         z = self.input_proj(x)
@@ -59,6 +60,9 @@ class TransformerAutoencoder(nn.Module):
 
     def pooled_features(self, x: torch.Tensor) -> torch.Tensor:
         return self.encode_sequence(x).mean(dim=1)
+
+    def logits(self, x: torch.Tensor) -> torch.Tensor:
+        return self.classifier(self.pooled_features(x)).squeeze(-1)
 
 
 class DenseAutoencoder(nn.Module):
@@ -149,6 +153,57 @@ class HybridAnomalyDetector:
             self.transformer.load_state_dict(best_state)
         return losses
 
+    def fit_supervised_transformer(self, x_train: np.ndarray, y_train: np.ndarray) -> list[float]:
+        torch.manual_seed(self.config.random_state)
+        x_tensor = torch.tensor(x_train, dtype=torch.float32)
+        y_tensor = torch.tensor(y_train, dtype=torch.float32)
+        loader = DataLoader(
+            TensorDataset(x_tensor, y_tensor),
+            batch_size=self.config.batch_size,
+            shuffle=True,
+            generator=torch.Generator().manual_seed(self.config.random_state),
+        )
+        optimizer = torch.optim.Adam(self.transformer.parameters(), lr=self.config.learning_rate)
+        recon_loss = nn.MSELoss()
+        positives = max(float(y_train.sum()), 1.0)
+        negatives = max(float(len(y_train) - y_train.sum()), 1.0)
+        pos_weight = torch.tensor([negatives / positives], dtype=torch.float32, device=self.device)
+        cls_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        losses: list[float] = []
+        best_loss = float("inf")
+        best_state = None
+        wait = 0
+
+        for _ in range(self.config.epochs):
+            total = 0.0
+            count = 0
+            self.transformer.train()
+            for batch, labels in loader:
+                batch = batch.to(self.device)
+                labels = labels.to(self.device)
+                optimizer.zero_grad(set_to_none=True)
+                recon = self.transformer(batch)
+                logits = self.transformer.logits(batch)
+                loss = recon_loss(recon, batch) + self.config.supervision_weight * cls_loss(logits, labels)
+                loss.backward()
+                optimizer.step()
+                total += float(loss.detach().cpu()) * len(batch)
+                count += len(batch)
+            epoch_loss = total / max(count, 1)
+            losses.append(epoch_loss)
+            if epoch_loss < best_loss - 1e-5:
+                best_loss = epoch_loss
+                wait = 0
+                best_state = {k: v.detach().cpu().clone() for k, v in self.transformer.state_dict().items()}
+            else:
+                wait += 1
+                if wait >= self.config.patience:
+                    break
+
+        if best_state is not None:
+            self.transformer.load_state_dict(best_state)
+        return losses
+
     def extract_features(self, x: np.ndarray, batch_size: int | None = None) -> np.ndarray:
         self.transformer.eval()
         batch_size = batch_size or self.config.batch_size
@@ -165,9 +220,33 @@ class HybridAnomalyDetector:
         self.iforest.fit(features)
         return losses
 
+    def fit_supervised(self, x_train: np.ndarray, y_train: np.ndarray) -> list[float]:
+        losses = self.fit_supervised_transformer(x_train, y_train)
+        normal_features = self.extract_features(x_train[y_train == 0])
+        if len(normal_features) == 0:
+            normal_features = self.extract_features(x_train)
+        self.iforest.fit(normal_features)
+        return losses
+
     def anomaly_scores(self, x: np.ndarray) -> np.ndarray:
         features = self.extract_features(x)
         return -self.iforest.score_samples(features)
+
+    def supervised_scores(self, x: np.ndarray) -> np.ndarray:
+        self.transformer.eval()
+        scores = []
+        with torch.no_grad():
+            for start in range(0, len(x), self.config.batch_size):
+                batch = torch.tensor(x[start : start + self.config.batch_size], dtype=torch.float32, device=self.device)
+                scores.append(torch.sigmoid(self.transformer.logits(batch)).cpu().numpy())
+        return np.concatenate(scores, axis=0)
+
+    def fused_scores(self, x: np.ndarray, alpha: float = 0.5) -> np.ndarray:
+        if_scores = self.anomaly_scores(x)
+        cls_scores = self.supervised_scores(x)
+        if_norm = (if_scores - if_scores.min()) / (np.ptp(if_scores) + 1e-8)
+        cls_norm = (cls_scores - cls_scores.min()) / (np.ptp(cls_scores) + 1e-8)
+        return alpha * cls_norm + (1.0 - alpha) * if_norm
 
     def reconstruction_scores(self, x: np.ndarray, batch_size: int | None = None) -> np.ndarray:
         self.transformer.eval()
