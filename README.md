@@ -22,6 +22,16 @@ Run a synthetic end-to-end check:
 python -m src.smoke_test
 ```
 
+Run the complete thesis experiment suite with baselines and ablations:
+
+```bash
+python -m src.experiment --dataset synthetic --fast
+python -m src.experiment --dataset fall --data-path data/raw/fall
+python -m src.experiment --dataset cicids --data-path data/raw/cicids2017
+```
+
+Each experiment writes `summary.csv`, `report.md`, per-method metrics, PR curves, confusion matrices, and training loss plots under `outputs/experiment_*`.
+
 Train fall detection:
 
 ```bash

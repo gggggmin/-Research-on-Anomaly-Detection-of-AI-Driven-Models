@@ -61,6 +61,30 @@ class TransformerAutoencoder(nn.Module):
         return self.encode_sequence(x).mean(dim=1)
 
 
+class DenseAutoencoder(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int = 64) -> None:
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, max(8, hidden_dim // 2)),
+            nn.ReLU(),
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(max(8, hidden_dim // 2), hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, input_dim),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        flat = x.reshape(x.shape[0], -1)
+        return self.decoder(self.encoder(flat))
+
+    def features(self, x: torch.Tensor) -> torch.Tensor:
+        flat = x.reshape(x.shape[0], -1)
+        return self.encoder(flat)
+
+
 class HybridAnomalyDetector:
     def __init__(self, input_dim: int, config: ModelConfig, device: str | None = None) -> None:
         self.config = config
@@ -144,3 +168,76 @@ class HybridAnomalyDetector:
     def anomaly_scores(self, x: np.ndarray) -> np.ndarray:
         features = self.extract_features(x)
         return -self.iforest.score_samples(features)
+
+    def reconstruction_scores(self, x: np.ndarray, batch_size: int | None = None) -> np.ndarray:
+        self.transformer.eval()
+        batch_size = batch_size or self.config.batch_size
+        scores = []
+        with torch.no_grad():
+            for start in range(0, len(x), batch_size):
+                batch = torch.tensor(x[start : start + batch_size], dtype=torch.float32, device=self.device)
+                recon = self.transformer(batch)
+                err = torch.mean((recon - batch) ** 2, dim=tuple(range(1, recon.ndim)))
+                scores.append(err.cpu().numpy())
+        return np.concatenate(scores, axis=0)
+
+
+class AutoencoderIsolationForest:
+    def __init__(self, input_shape: tuple[int, ...], config: ModelConfig, device: str | None = None) -> None:
+        self.config = config
+        self.input_shape = input_shape
+        self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        self.autoencoder = DenseAutoencoder(int(np.prod(input_shape)), hidden_dim=min(128, max(32, int(np.prod(input_shape)) // 2))).to(self.device)
+        self.iforest = IsolationForest(
+            n_estimators=config.iforest_estimators,
+            max_samples=config.iforest_max_samples,
+            contamination=config.contamination,
+            random_state=config.random_state,
+            n_jobs=1,
+        )
+
+    def fit_autoencoder(self, x_train: np.ndarray) -> list[float]:
+        torch.manual_seed(self.config.random_state)
+        data = torch.tensor(x_train, dtype=torch.float32)
+        loader = DataLoader(
+            TensorDataset(data),
+            batch_size=self.config.batch_size,
+            shuffle=True,
+            generator=torch.Generator().manual_seed(self.config.random_state),
+        )
+        optimizer = torch.optim.Adam(self.autoencoder.parameters(), lr=self.config.learning_rate)
+        loss_fn = nn.MSELoss()
+        losses: list[float] = []
+        for _ in range(self.config.epochs):
+            total = 0.0
+            count = 0
+            self.autoencoder.train()
+            for (batch,) in loader:
+                batch = batch.to(self.device)
+                flat = batch.reshape(batch.shape[0], -1)
+                optimizer.zero_grad(set_to_none=True)
+                recon = self.autoencoder(batch)
+                loss = loss_fn(recon, flat)
+                loss.backward()
+                optimizer.step()
+                total += float(loss.detach().cpu()) * len(batch)
+                count += len(batch)
+            losses.append(total / max(count, 1))
+        return losses
+
+    def extract_features(self, x: np.ndarray) -> np.ndarray:
+        self.autoencoder.eval()
+        out = []
+        with torch.no_grad():
+            for start in range(0, len(x), self.config.batch_size):
+                batch = torch.tensor(x[start : start + self.config.batch_size], dtype=torch.float32, device=self.device)
+                out.append(self.autoencoder.features(batch).cpu().numpy())
+        return np.concatenate(out, axis=0)
+
+    def fit(self, x_train: np.ndarray) -> list[float]:
+        losses = self.fit_autoencoder(x_train)
+        self.iforest.fit(self.extract_features(x_train))
+        return losses
+
+    def anomaly_scores(self, x: np.ndarray) -> np.ndarray:
+        return -self.iforest.score_samples(self.extract_features(x))

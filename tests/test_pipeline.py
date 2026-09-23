@@ -9,6 +9,7 @@ from src.data import load_dataset, make_fall_windows
 from src.evaluation import best_threshold_from_pr, compute_metrics
 from src.models import HybridAnomalyDetector
 from src.train import choose_config
+from src.experiment import run_full_experiment
 
 
 class PipelineTests(unittest.TestCase):
@@ -41,6 +42,11 @@ class PipelineTests(unittest.TestCase):
         detector.fit(bundle.x_train[:64])
         features = detector.extract_features(bundle.x_test[:10])
         self.assertEqual(features.shape, (10, cfg.hidden_dim))
+
+    def test_full_experiment_smoke(self) -> None:
+        run_dir = run_full_experiment("synthetic", output_dir="outputs/test_runs", fast=True)
+        self.assertTrue((run_dir / "summary.csv").exists())
+        self.assertTrue((run_dir / "report.md").exists())
 
 
 if __name__ == "__main__":
