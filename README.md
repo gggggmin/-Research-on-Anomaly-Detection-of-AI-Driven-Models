@@ -11,6 +11,12 @@ Put local datasets here:
 
 Supported file formats: `.csv`, `.xlsx`, `.xls`, `.parquet`.
 
+If you downloaded UCI Localization from the official repository, prepare the raw txt file:
+
+```bash
+python -m src.prepare_datasets --uci-localization data/raw/fall/ConfLongDemo_JSI.txt
+```
+
 The loader tries common label names automatically: `label`, `Label`, `class`, `Class`, `target`, `Target`, `activity`.
 Normal labels are inferred from `BENIGN`, `normal`, `0`, `false`, and `negative`; other labels are treated as anomalies.
 
@@ -31,6 +37,8 @@ python -m src.experiment --dataset cicids --data-path data/raw/cicids2017
 ```
 
 Each experiment writes `summary.csv`, `report.md`, per-method metrics, PR curves, confusion matrices, and training loss plots under `outputs/experiment_*`.
+
+Current downloaded-data results are summarized in `EXPERIMENT_RESULTS.md`.
 
 Train fall detection:
 

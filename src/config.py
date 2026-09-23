@@ -6,7 +6,26 @@ from typing import Any
 
 
 RANDOM_STATE = 42
-NORMAL_LABELS = {"0", "benign", "normal", "false", "negative", "nonfall", "non-fall", "walk", "standing"}
+NORMAL_LABELS = {
+    "0",
+    "benign",
+    "normal",
+    "false",
+    "negative",
+    "nonfall",
+    "non-fall",
+    "walk",
+    "walking",
+    "lying down",
+    "lying",
+    "sitting down",
+    "sitting",
+    "standing up from lying",
+    "on all fours",
+    "sitting on the ground",
+    "standing up from sitting",
+    "standing up from sitting on the ground",
+}
 LABEL_CANDIDATES = ("label", "Label", "class", "Class", "target", "Target", "activity", "Activity")
 
 

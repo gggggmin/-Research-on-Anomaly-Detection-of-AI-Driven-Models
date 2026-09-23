@@ -90,28 +90,31 @@ def run_full_experiment(
     model_config = choose_config(dataset, bundle.x_train.shape[-1], fast=fast)
     run_dir = Path(output_dir) / f"experiment_{dataset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     run_dir.mkdir(parents=True, exist_ok=True)
+    fit_x = bundle.x_train[bundle.y_train == 0]
+    if len(fit_x) == 0:
+        fit_x = bundle.x_train
 
     results: dict[str, dict[str, float]] = {}
 
     hybrid = HybridAnomalyDetector(bundle.x_train.shape[-1], model_config)
-    hybrid_losses = hybrid.fit(bundle.x_train)
+    hybrid_losses = hybrid.fit(fit_x)
     results["full_transformer_iforest"] = format_metrics(
         score_and_record(run_dir, "full_transformer_iforest", bundle.y_test, hybrid.anomaly_scores(bundle.x_test), hybrid_losses)
     )
 
-    results["zscore"] = format_metrics(score_and_record(run_dir, "zscore", bundle.y_test, zscore_scores(bundle.x_train, bundle.x_test)))
+    results["zscore"] = format_metrics(score_and_record(run_dir, "zscore", bundle.y_test, zscore_scores(fit_x, bundle.x_test)))
     results["iforest_without_transformer"] = format_metrics(
-        score_and_record(run_dir, "iforest_without_transformer", bundle.y_test, iforest_scores(bundle.x_train, bundle.x_test))
+        score_and_record(run_dir, "iforest_without_transformer", bundle.y_test, iforest_scores(fit_x, bundle.x_test))
     )
     results["one_class_svm"] = format_metrics(
-        score_and_record(run_dir, "one_class_svm", bundle.y_test, one_class_svm_scores(bundle.x_train, bundle.x_test))
+        score_and_record(run_dir, "one_class_svm", bundle.y_test, one_class_svm_scores(fit_x, bundle.x_test))
     )
     results["transformer_without_iforest"] = format_metrics(
         score_and_record(run_dir, "transformer_without_iforest", bundle.y_test, hybrid.reconstruction_scores(bundle.x_test))
     )
 
     ae_iforest = AutoencoderIsolationForest(bundle.x_train.shape[1:], model_config)
-    ae_losses = ae_iforest.fit(bundle.x_train)
+    ae_losses = ae_iforest.fit(fit_x)
     results["autoencoder_iforest"] = format_metrics(
         score_and_record(run_dir, "autoencoder_iforest", bundle.y_test, ae_iforest.anomaly_scores(bundle.x_test), ae_losses)
     )
@@ -130,6 +133,7 @@ def run_full_experiment(
             "feature_mode": feature_mode,
             "fast": fast,
             "x_train_shape": list(bundle.x_train.shape),
+            "x_fit_normal_shape": list(fit_x.shape),
             "x_test_shape": list(bundle.x_test.shape),
             "feature_names": bundle.feature_names,
             "results": results,

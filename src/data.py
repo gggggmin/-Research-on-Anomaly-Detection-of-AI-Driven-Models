@@ -154,7 +154,7 @@ def remove_correlated_features(df: pd.DataFrame, threshold: float = 0.9) -> pd.D
 def select_network_features(x: pd.DataFrame, y: np.ndarray, mode: str) -> pd.DataFrame:
     if x.shape[1] <= 1:
         return x
-    forest = RandomForestClassifier(n_estimators=120, random_state=RANDOM_STATE, n_jobs=-1, class_weight="balanced")
+    forest = RandomForestClassifier(n_estimators=120, random_state=RANDOM_STATE, n_jobs=1, class_weight="balanced")
     forest.fit(x, y)
     importances = pd.Series(forest.feature_importances_, index=x.columns).sort_values(ascending=False)
     if mode == "top7":

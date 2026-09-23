@@ -53,7 +53,10 @@ def train_pipeline(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     detector = HybridAnomalyDetector(input_dim=bundle.x_train.shape[-1], config=model_config)
-    losses = detector.fit(bundle.x_train)
+    fit_x = bundle.x_train[bundle.y_train == 0]
+    if len(fit_x) == 0:
+        fit_x = bundle.x_train
+    losses = detector.fit(fit_x)
     scores = detector.anomaly_scores(bundle.x_test)
 
     config = {

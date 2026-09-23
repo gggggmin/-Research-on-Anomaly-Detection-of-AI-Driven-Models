@@ -7,3 +7,4 @@ joblib
 openpyxl
 imbalanced-learn
 optuna
+pyarrow
