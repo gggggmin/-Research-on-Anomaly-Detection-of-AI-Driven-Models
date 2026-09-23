@@ -1,0 +1,13 @@
+__pycache__/
+.idea/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+outputs/
+data/raw/
+data/processed/
+*.joblib
+*.pt
