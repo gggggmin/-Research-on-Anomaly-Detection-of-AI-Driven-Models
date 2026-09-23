@@ -38,6 +38,8 @@ python -m src.experiment --dataset cicids --data-path data/raw/cicids2017
 
 Each experiment writes `summary.csv`, `report.md`, per-method metrics, PR curves, confusion matrices, and training loss plots under `outputs/experiment_*`.
 
+For UCI Localization, fall windows are built inside each `(sequence, tag_id)` group. A window is labelled anomalous if it contains any `falling` row.
+
 Current downloaded-data results are summarized in `EXPERIMENT_RESULTS.md`.
 
 Train fall detection:

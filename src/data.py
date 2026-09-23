@@ -116,10 +116,39 @@ def make_fall_windows(xyz: np.ndarray, labels: np.ndarray, window_size: int, str
         stds = np.repeat(segment.std(axis=0, keepdims=True), window_size, axis=0)
         features = np.concatenate([segment, total, tilt, means, stds], axis=1)
         windows.append(features)
-        y.append(int(seg_y.mean() >= 0.5))
+        y.append(int(seg_y.max() > 0))
     if not windows:
         raise ValueError("Not enough fall rows to form one sliding window.")
     return np.stack(windows), np.asarray(y, dtype=np.int64)
+
+
+def make_grouped_fall_windows(
+    df: pd.DataFrame,
+    xyz_cols: list[str],
+    label_col: str,
+    window_size: int,
+    stride: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    group_cols = [col for col in ("sequence", "tag_id") if col in df.columns]
+    sort_cols = [col for col in ("timestamp", "date") if col in df.columns]
+    windows: list[np.ndarray] = []
+    labels: list[np.ndarray] = []
+
+    groups = df.groupby(group_cols, sort=False) if group_cols else [(None, df)]
+    for _, group in groups:
+        if sort_cols:
+            group = group.sort_values(sort_cols[0])
+        if len(group) < window_size:
+            continue
+        group_xyz = numeric_frame(group[xyz_cols], set()).to_numpy(dtype=np.float32)
+        group_y = labels_to_binary(group[label_col])
+        x_win, y_win = make_fall_windows(group_xyz, group_y, window_size, stride)
+        windows.append(x_win)
+        labels.append(y_win)
+
+    if not windows:
+        raise ValueError("Not enough grouped fall rows to form one sliding window.")
+    return np.concatenate(windows, axis=0), np.concatenate(labels, axis=0)
 
 
 def load_fall_dataset(config: DataConfig) -> DatasetBundle:
@@ -129,8 +158,7 @@ def load_fall_dataset(config: DataConfig) -> DatasetBundle:
     label_col = find_label_column(df)
     labels = labels_to_binary(df[label_col])
     xyz_cols = infer_xyz_columns(df, label_col)
-    xyz = numeric_frame(df[xyz_cols], set()).to_numpy(dtype=np.float32)
-    x, y = make_fall_windows(xyz, labels, config.window_size, config.stride)
+    x, y = make_grouped_fall_windows(df, xyz_cols, label_col, config.window_size, config.stride)
 
     x_train, x_test, y_train, y_test = train_test_split(
         x, y, test_size=config.test_size, stratify=y, random_state=config.random_state

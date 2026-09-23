@@ -14,6 +14,13 @@ The raw datasets are intentionally ignored by Git because they are generated/dow
 | UCI Localization | `data/raw/fall/uci_localization_fall.csv` | 164,860 | 8 raw columns | `falling`: 2,973; other activities: 161,887 |
 | CIC-IDS2017 DDoS subset | `data/raw/cicids2017/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv.parquet` | 225,745 | 79 columns | `DDoS`: 128,027; `BENIGN`: 97,718 |
 
+After grouping UCI Localization by `(sequence, tag_id)` and applying `window=50`, `stride=25`, the fall experiment contains:
+
+| Split | Normal windows | Fall windows |
+|---|---:|---:|
+| Train | 4,590 | 566 |
+| Test | 1,148 | 141 |
+
 ## Fast Reproduction Results
 
 These results use `--fast`, so they are suitable as a quick local reproduction and sanity check. For final thesis tables, rerun without `--fast`.
@@ -28,16 +35,16 @@ python -m src.experiment --dataset fall --data-path data/raw/fall --fast
 
 Output directory:
 
-`outputs/experiment_fall_20260923_203809`
+`outputs/experiment_fall_20260923_204542`
 
 | Method | Accuracy | Precision | Recall | F1 | AUC |
 |---|---:|---:|---:|---:|---:|
-| full_transformer_iforest | 0.0334 | 0.0162 | 1.0000 | 0.0319 | 0.3497 |
-| zscore | 0.2403 | 0.0186 | 0.9048 | 0.0365 | 0.4936 |
-| iforest_without_transformer | 0.0212 | 0.0160 | 1.0000 | 0.0315 | 0.2576 |
-| one_class_svm | 0.0334 | 0.0162 | 1.0000 | 0.0319 | 0.2633 |
-| transformer_without_iforest | 0.6073 | 0.0212 | 0.5238 | 0.0407 | 0.5194 |
-| autoencoder_iforest | 0.0629 | 0.0167 | 1.0000 | 0.0329 | 0.4462 |
+| full_transformer_iforest | 0.6043 | 0.1375 | 0.4965 | 0.2154 | 0.5561 |
+| zscore | 0.3646 | 0.1182 | 0.7447 | 0.2041 | 0.5059 |
+| iforest_without_transformer | 0.1389 | 0.1115 | 0.9858 | 0.2003 | 0.4603 |
+| one_class_svm | 0.2040 | 0.1162 | 0.9504 | 0.2071 | 0.4968 |
+| transformer_without_iforest | 0.5493 | 0.1573 | 0.7163 | 0.2580 | 0.6145 |
+| autoencoder_iforest | 0.7998 | 0.2201 | 0.3262 | 0.2629 | 0.5995 |
 
 ### CIC-IDS2017 DDoS Intrusion Detection
 
@@ -64,7 +71,7 @@ Output directory:
 
 The CIC-IDS2017 DDoS subset produces usable intrusion-detection evidence, but the current fast run does not reproduce the paper's claimed `0.92` accuracy for the fusion model. One-Class SVM is strongest in this quick setting.
 
-The fall experiment is not thesis-grade evidence yet. The UCI Localization dataset is a localization/activity dataset with only `falling` as a small minority class, not the simplified 6,624-row accelerometer dataset described in the thesis text. The thesis likely used an undocumented subset, filtering strategy, or different fall dataset. Treating the full UCI Localization file directly as a binary fall dataset gives weak metrics.
+The fall experiment is improved by grouped windowing and event-style labels: a window is anomalous if it contains any `falling` row. Even after this correction, the result is modest because UCI Localization is a localization/activity dataset, not the simplified 6,624-row accelerometer dataset described in the thesis text. The thesis likely used an undocumented subset, filtering strategy, or different fall dataset.
 
 For final reporting, run non-fast experiments after deciding whether to:
 
